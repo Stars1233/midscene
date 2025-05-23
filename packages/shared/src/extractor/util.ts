@@ -58,10 +58,11 @@ export function setDataForNode(
   return selector;
 }
 
-function isElementPartiallyInViewport(
+export function isElementPartiallyInViewport(
   rect: ReturnType<typeof getRect>,
   currentWindow: typeof window,
   currentDocument: typeof document,
+  visibleAreaRatio: number = 2 / 3,
 ) {
   const elementHeight = rect.height;
   const elementWidth = rect.width;
@@ -90,7 +91,7 @@ function isElementPartiallyInViewport(
   const visibleArea = overlapRect.width * overlapRect.height;
   const totalArea = elementHeight * elementWidth;
   // return visibleArea > 30 * 30 || visibleArea / totalArea >= 2 / 3;
-  return visibleArea / totalArea >= 2 / 3;
+  return visibleArea / totalArea >= visibleAreaRatio;
 }
 
 export function getPseudoElementContent(
@@ -470,13 +471,13 @@ export function setNodeToCacheList(node: globalThis.Node, id: string) {
     if (getNodeFromCacheList(id)) {
       return;
     }
-    (window as any).midsceneNodeHashCacheList.push({ node, id });
+    (window as any).midsceneNodeHashCacheList?.push({ node, id });
   }
 }
 
 export function getNodeFromCacheList(id: string) {
   if (typeof window !== 'undefined') {
-    return (window as any).midsceneNodeHashCacheList.find(
+    return (window as any).midsceneNodeHashCacheList?.find(
       (item: { node: Node; id: string }) => item.id === id,
     )?.node;
   }

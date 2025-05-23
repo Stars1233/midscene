@@ -121,6 +121,11 @@ export class PageTaskExecutor {
       );
       if (info?.id) {
         elementId = info.id;
+      } else {
+        debug(
+          'no element id found for position node, will not update cache',
+          element,
+        );
       }
     }
 
@@ -216,6 +221,8 @@ export class PageTaskExecutor {
             this.insight.onceDumpUpdatedFn = dumpCollector;
             const shotTime = Date.now();
             const pageContext = await this.insight.contextRetrieverFn('locate');
+            task.pageContext = pageContext;
+
             const recordItem: ExecutionRecorderItem = {
               type: 'screenshot',
               ts: shotTime,
@@ -232,21 +239,32 @@ export class PageTaskExecutor {
             const xpaths = locateCacheRecord?.cacheContent?.xpaths;
             let elementFromCache = null;
             try {
-              if (xpaths?.length && this.taskCache?.isCacheResultUsed) {
+              if (
+                xpaths?.length &&
+                this.taskCache?.isCacheResultUsed &&
+                param?.cacheable !== false
+              ) {
                 // hit cache, use new id
                 const elementInfosScriptContent =
                   getElementInfosScriptContent();
-                const element = await this.page.evaluateJavaScript?.(
-                  `${elementInfosScriptContent}midscene_element_inspector.getElementInfoByXpath('${xpaths[0]}')`,
-                );
-                elementFromCache = element;
-                debug('cache hit, prompt: %s', cachePrompt);
-                cacheHitFlag = true;
-                debug(
-                  'found a new new element with same xpath, xpath: %s, id: %s',
-                  xpaths[0],
-                  element?.id,
-                );
+
+                for (let i = 0; i < xpaths.length; i++) {
+                  const element = await this.page.evaluateJavaScript?.(
+                    `${elementInfosScriptContent}midscene_element_inspector.getElementInfoByXpath('${xpaths[i]}')`,
+                  );
+
+                  if (element?.id) {
+                    elementFromCache = element;
+                    debug('cache hit, prompt: %s', cachePrompt);
+                    cacheHitFlag = true;
+                    debug(
+                      'found a new new element with same xpath, xpath: %s, id: %s',
+                      xpaths[i],
+                      element?.id,
+                    );
+                    break;
+                  }
+                }
               }
             } catch (error) {
               debug('get element info by xpath error: ', error);
@@ -265,12 +283,19 @@ export class PageTaskExecutor {
             const aiCost = Date.now() - startTime;
 
             // update cache
-            if (element && this.taskCache && !cacheHitFlag) {
+            let currentXpaths: string[] | undefined;
+            if (
+              element &&
+              this.taskCache &&
+              !cacheHitFlag &&
+              param?.cacheable !== false
+            ) {
               const elementXpaths = await this.getElementXpath(
                 pageContext,
                 element,
               );
-              if (elementXpaths) {
+              if (elementXpaths?.length) {
+                currentXpaths = elementXpaths;
                 this.taskCache.updateOrAppendCacheRecord(
                   {
                     type: 'locate',
@@ -280,7 +305,11 @@ export class PageTaskExecutor {
                   locateCacheRecord,
                 );
               } else {
-                debug('no xpaths found, will not update cache', cachePrompt);
+                debug(
+                  'no xpaths found, will not update cache',
+                  cachePrompt,
+                  elementXpaths,
+                );
               }
             }
             if (!element) {
@@ -294,6 +323,8 @@ export class PageTaskExecutor {
               pageContext,
               cache: {
                 hit: cacheHitFlag,
+                originalXpaths: xpaths,
+                currentXpaths,
               },
               aiCost,
             };
@@ -704,6 +735,11 @@ export class PageTaskExecutor {
           sleep,
         } = planResult;
 
+        executorContext.task.log = {
+          rawResponse,
+        };
+        executorContext.task.usage = usage;
+
         let stopCollecting = false;
         let bboxCollected = false;
         let planParsingError = '';
@@ -778,8 +814,6 @@ export class PageTaskExecutor {
             hit: false,
           },
           pageContext,
-          usage,
-          rawResponse,
         };
       },
     };
@@ -837,9 +871,6 @@ export class PageTaskExecutor {
             more_actions_needed_by_instruction: true,
             log: '',
             yamlFlow: planResult.yamlFlow,
-          },
-          log: {
-            rawResponse: planResult,
           },
           cache: {
             hit: false,
