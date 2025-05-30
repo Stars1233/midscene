@@ -1,6 +1,7 @@
 import type { WebPage } from '@/common/page';
 import {
   type AgentAssertOpt,
+  type AgentDescribeElementAtPointResult,
   type AgentWaitForOpt,
   type DetailedLocateParam,
   type ExecutionDump,
@@ -9,11 +10,16 @@ import {
   type GroupedActionDump,
   Insight,
   type InsightAction,
+  type InsightExtractOption,
+  type InsightExtractParam,
   type LocateOption,
   type LocateResultElement,
+  type LocateValidatorResult,
+  type LocatorValidatorOption,
   type MidsceneYamlScript,
   type OnTaskStartTip,
   type PlanningActionParamScroll,
+  type Rect,
 } from '@midscene/core';
 
 import yaml from 'js-yaml';
@@ -48,6 +54,23 @@ import { printReportMsg, reportFileName } from './utils';
 import { type WebUIContext, parseContextFromWebPage } from './utils';
 
 const debug = getDebug('web-integration');
+
+const distanceOfTwoPoints = (p1: [number, number], p2: [number, number]) => {
+  const [x1, y1] = p1;
+  const [x2, y2] = p2;
+  return Math.round(Math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2));
+};
+
+const includedInRect = (point: [number, number], rect: Rect) => {
+  const [x, y] = point;
+  const { left, top, width, height } = rect;
+  return x >= left && x <= left + width && y >= top && y <= top + height;
+};
+
+const defaultInsightExtractOption: InsightExtractOption = {
+  domIncluded: false,
+  screenshotIncluded: true,
+};
 
 export interface PageAgentOpt {
   forceSameTabNavigation?: boolean /* if limit the new tab to the current page, default true */;
@@ -221,11 +244,13 @@ export class PageAgent<PageType extends WebPage = WebPage> {
   ): DetailedLocateParam {
     assert(locatePrompt, 'missing locate prompt');
     if (typeof opt === 'object') {
-      const prompt = opt.prompt || locatePrompt;
-      const deepThink = opt.deepThink || false;
+      const prompt = opt.prompt ?? locatePrompt;
+      const deepThink = opt.deepThink ?? false;
+      const cacheable = opt.cacheable ?? true;
       return {
         prompt,
         deepThink,
+        cacheable,
       };
     }
     return {
@@ -242,6 +267,22 @@ export class PageAgent<PageType extends WebPage = WebPage> {
     const { executor, output } = await this.taskExecutor.runPlans(
       taskTitleStr('Tap', locateParamStr(detailedLocateParam)),
       plans,
+      { cacheable: opt?.cacheable },
+    );
+    this.afterTaskRunning(executor);
+    return output;
+  }
+
+  async aiRightClick(locatePrompt: string, opt?: LocateOption) {
+    const detailedLocateParam = this.buildDetailedLocateParam(
+      locatePrompt,
+      opt,
+    );
+    const plans = buildPlans('RightClick', detailedLocateParam);
+    const { executor, output } = await this.taskExecutor.runPlans(
+      taskTitleStr('RightClick', locateParamStr(detailedLocateParam)),
+      plans,
+      { cacheable: opt?.cacheable },
     );
     this.afterTaskRunning(executor);
     return output;
@@ -256,6 +297,7 @@ export class PageAgent<PageType extends WebPage = WebPage> {
     const { executor, output } = await this.taskExecutor.runPlans(
       taskTitleStr('Hover', locateParamStr(detailedLocateParam)),
       plans,
+      { cacheable: opt?.cacheable },
     );
     this.afterTaskRunning(executor);
     return output;
@@ -277,6 +319,7 @@ export class PageAgent<PageType extends WebPage = WebPage> {
     const { executor, output } = await this.taskExecutor.runPlans(
       taskTitleStr('Input', locateParamStr(detailedLocateParam)),
       plans,
+      { cacheable: opt?.cacheable },
     );
     this.afterTaskRunning(executor);
     return output;
@@ -297,6 +340,7 @@ export class PageAgent<PageType extends WebPage = WebPage> {
     const { executor, output } = await this.taskExecutor.runPlans(
       taskTitleStr('KeyboardPress', locateParamStr(detailedLocateParam)),
       plans,
+      { cacheable: opt?.cacheable },
     );
     this.afterTaskRunning(executor);
     return output;
@@ -317,17 +361,25 @@ export class PageAgent<PageType extends WebPage = WebPage> {
     const { executor, output } = await this.taskExecutor.runPlans(
       taskTitleStr('Scroll', paramInTitle),
       plans,
+      { cacheable: opt?.cacheable },
     );
     this.afterTaskRunning(executor);
     return output;
   }
 
-  async aiAction(taskPrompt: string) {
+  async aiAction(
+    taskPrompt: string,
+    opt?: {
+      cacheable?: boolean;
+    },
+  ) {
+    const cacheable = opt?.cacheable;
     // if vlm-ui-tars, plan cache is not used
     const isVlmUiTars = vlLocateMode() === 'vlm-ui-tars';
-    const matchedCache = isVlmUiTars
-      ? undefined
-      : this.taskCache?.matchPlanCache(taskPrompt);
+    const matchedCache =
+      isVlmUiTars || cacheable === false
+        ? undefined
+        : this.taskCache?.matchPlanCache(taskPrompt);
     if (matchedCache && this.taskCache?.isCacheResultUsed) {
       // log into report file
       const { executor } = await this.taskExecutor.loadYamlFlowAsPlanning(
@@ -343,11 +395,13 @@ export class PageAgent<PageType extends WebPage = WebPage> {
     }
 
     const { output, executor } = await (isVlmUiTars
-      ? this.taskExecutor.actionToGoal(taskPrompt)
-      : this.taskExecutor.action(taskPrompt, this.opts.aiActionContext));
+      ? this.taskExecutor.actionToGoal(taskPrompt, { cacheable })
+      : this.taskExecutor.action(taskPrompt, this.opts.aiActionContext, {
+          cacheable,
+        }));
 
     // update cache
-    if (this.taskCache && output?.yamlFlow) {
+    if (this.taskCache && output?.yamlFlow && cacheable !== false) {
       const yamlContent: MidsceneYamlScript = {
         tasks: [
           {
@@ -371,28 +425,122 @@ export class PageAgent<PageType extends WebPage = WebPage> {
     return output;
   }
 
-  async aiQuery(demand: any) {
-    const { output, executor } = await this.taskExecutor.query(demand);
+  async aiQuery(
+    demand: InsightExtractParam,
+    opt: InsightExtractOption = defaultInsightExtractOption,
+  ) {
+    const { output, executor } = await this.taskExecutor.query(demand, opt);
     this.afterTaskRunning(executor);
     return output;
   }
 
-  async aiBoolean(prompt: string) {
-    const { output, executor } = await this.taskExecutor.boolean(prompt);
+  async aiBoolean(
+    prompt: string,
+    opt: InsightExtractOption = defaultInsightExtractOption,
+  ) {
+    const { output, executor } = await this.taskExecutor.boolean(prompt, opt);
     this.afterTaskRunning(executor);
     return output;
   }
 
-  async aiNumber(prompt: string) {
-    const { output, executor } = await this.taskExecutor.number(prompt);
+  async aiNumber(
+    prompt: string,
+    opt: InsightExtractOption = defaultInsightExtractOption,
+  ) {
+    const { output, executor } = await this.taskExecutor.number(prompt, opt);
     this.afterTaskRunning(executor);
     return output;
   }
 
-  async aiString(prompt: string) {
-    const { output, executor } = await this.taskExecutor.string(prompt);
+  async aiString(
+    prompt: string,
+    opt: InsightExtractOption = defaultInsightExtractOption,
+  ) {
+    const { output, executor } = await this.taskExecutor.string(prompt, opt);
     this.afterTaskRunning(executor);
     return output;
+  }
+
+  async describeElementAtPoint(
+    center: [number, number],
+    opt?: {
+      verifyPrompt?: boolean;
+      retryLimit?: number;
+      deepThink?: boolean;
+    } & LocatorValidatorOption,
+  ): Promise<AgentDescribeElementAtPointResult> {
+    const { verifyPrompt = true, retryLimit = 3 } = opt || {};
+
+    let success = false;
+    let retryCount = 0;
+    let resultPrompt = '';
+    let deepThink = opt?.deepThink || false;
+    let verifyResult: LocateValidatorResult | undefined;
+
+    while (!success && retryCount < retryLimit) {
+      if (retryCount >= 2) {
+        deepThink = true;
+      }
+      debug(
+        'aiDescribe',
+        center,
+        'verifyPrompt',
+        verifyPrompt,
+        'retryCount',
+        retryCount,
+        'deepThink',
+        deepThink,
+      );
+      const text = await this.insight.describe(center, { deepThink });
+      debug('aiDescribe text', text);
+      assert(text.description, `failed to describe element at [${center}]`);
+      resultPrompt = text.description;
+
+      verifyResult = await this.verifyLocator(
+        resultPrompt,
+        deepThink ? { deepThink: true } : undefined,
+        center,
+        opt,
+      );
+      if (verifyResult.pass) {
+        success = true;
+      } else {
+        retryCount++;
+      }
+    }
+
+    return {
+      prompt: resultPrompt,
+      deepThink,
+      verifyResult,
+    };
+  }
+
+  async verifyLocator(
+    prompt: string,
+    locateOpt: LocateOption | undefined,
+    expectCenter: [number, number],
+    verifyLocateOption?: LocatorValidatorOption,
+  ): Promise<LocateValidatorResult> {
+    debug('verifyLocator', prompt, locateOpt, expectCenter, verifyLocateOption);
+
+    const { center: verifyCenter, rect: verifyRect } = await this.aiLocate(
+      prompt,
+      locateOpt,
+    );
+    const distance = distanceOfTwoPoints(expectCenter, verifyCenter);
+    const included = includedInRect(expectCenter, verifyRect);
+    const pass =
+      distance <= (verifyLocateOption?.centerDistanceThreshold || 20) ||
+      included;
+    const verifyResult = {
+      pass,
+      rect: verifyRect,
+      center: verifyCenter,
+      centerDistance: distance,
+    };
+    debug('aiDescribe verifyResult', verifyResult);
+    return verifyResult;
   }
 
   async aiLocate(prompt: string, opt?: LocateOption) {
@@ -401,6 +549,7 @@ export class PageAgent<PageType extends WebPage = WebPage> {
     const { executor, output } = await this.taskExecutor.runPlans(
       taskTitleStr('Locate', locateParamStr(detailedLocateParam)),
       plans,
+      { cacheable: opt?.cacheable },
     );
     this.afterTaskRunning(executor);
 
@@ -460,8 +609,12 @@ export class PageAgent<PageType extends WebPage = WebPage> {
       return this.aiTap(taskPrompt);
     }
 
+    if (type === 'rightClick') {
+      return this.aiRightClick(taskPrompt);
+    }
+
     throw new Error(
-      `Unknown type: ${type}, only support 'action', 'query', 'assert', 'tap'`,
+      `Unknown type: ${type}, only support 'action', 'query', 'assert', 'tap', 'rightClick'`,
     );
   }
 

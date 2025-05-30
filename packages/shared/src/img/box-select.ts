@@ -1,6 +1,6 @@
 import assert from 'node:assert';
 import type Jimp from 'jimp';
-import type { BaseElement } from '../types';
+import type { BaseElement, Rect } from '../types';
 import getJimp from './get-jimp';
 import { bufferFromBase64, imageInfoOfBase64 } from './index';
 
@@ -21,11 +21,18 @@ const loadFonts = async () => {
   }
 };
 
+interface ElementForOverlay {
+  rect: Rect;
+  indexId?: number;
+}
+
 const createSvgOverlay = async (
-  elements: Array<BaseElement>,
+  elements: Array<ElementForOverlay>,
   imageWidth: number,
   imageHeight: number,
   boxPadding = 5,
+  borderThickness = 2,
+  prompt?: string,
 ): Promise<Jimp> => {
   const Jimp = await getJimp();
   const image = new Jimp(imageWidth, imageHeight, 0x00000000);
@@ -39,22 +46,67 @@ const createSvgOverlay = async (
     { rect: 0x500073ff, text: 0xffffffff }, // purple, white
   ];
 
+  // Draw prompt text if provided
+  if (prompt) {
+    try {
+      cachedFont = cachedFont || (await loadFonts());
+      const promptPadding = 10;
+      const promptMargin = 20;
+      const promptHeight = 30;
+      const promptY = imageHeight - promptHeight - promptMargin;
+
+      // Draw prompt background
+      image.scan(
+        0,
+        promptY,
+        imageWidth,
+        promptHeight,
+        (x: number, y: number, idx: number): void => {
+          image.bitmap.data[idx + 0] = 0x00; // R
+          image.bitmap.data[idx + 1] = 0x00; // G
+          image.bitmap.data[idx + 2] = 0x00; // B
+          image.bitmap.data[idx + 3] = 0xcc; // A (80% opacity)
+        },
+      );
+
+      // Draw prompt text
+      image.print(
+        cachedFont,
+        promptPadding,
+        promptY,
+        {
+          text: prompt,
+          alignmentX: Jimp.HORIZONTAL_ALIGN_LEFT,
+          alignmentY: Jimp.VERTICAL_ALIGN_MIDDLE,
+        },
+        imageWidth - promptPadding * 2,
+        promptHeight,
+      );
+    } catch (error) {
+      console.error('Error drawing prompt text', error);
+    }
+  }
+
   for (let index = 0; index < elements.length; index++) {
     const element = elements[index];
     const color = colors[index % colors.length];
 
     // Add 5px padding to the rect
+    const paddedLeft = Math.max(0, element.rect.left - boxPadding);
+    const paddedTop = Math.max(0, element.rect.top - boxPadding);
+    const paddedWidth = Math.min(
+      imageWidth - paddedLeft,
+      element.rect.width + boxPadding * 2,
+    );
+    const paddedHeight = Math.min(
+      imageHeight - paddedTop,
+      element.rect.height + boxPadding * 2,
+    );
     const paddedRect = {
-      left: Math.max(0, element.rect.left - boxPadding),
-      top: Math.max(0, element.rect.top - boxPadding),
-      width: Math.min(
-        imageWidth - element.rect.left,
-        element.rect.width + boxPadding * 2,
-      ),
-      height: Math.min(
-        imageHeight - element.rect.top,
-        element.rect.height + boxPadding * 2,
-      ),
+      left: paddedLeft,
+      top: paddedTop,
+      width: paddedWidth,
+      height: paddedHeight,
     };
 
     // Draw rectangle
@@ -65,10 +117,12 @@ const createSvgOverlay = async (
       paddedRect.height,
       (x: number, y: number, idx: number): void => {
         if (
-          x === paddedRect.left ||
-          x === paddedRect.left + paddedRect.width - 1 ||
-          y === paddedRect.top ||
-          y === paddedRect.top + paddedRect.height - 1
+          (x >= paddedRect.left && x < paddedRect.left + borderThickness) || // Left border
+          (x <= paddedRect.left + paddedRect.width - 1 &&
+            x > paddedRect.left + paddedRect.width - borderThickness) || // Right border
+          (y >= paddedRect.top && y < paddedRect.top + borderThickness) || // Top border
+          (y <= paddedRect.top + paddedRect.height - 1 &&
+            y > paddedRect.top + paddedRect.height - borderThickness) // Bottom border
         ) {
           image.bitmap.data[idx + 0] = (color.rect >> 24) & 0xff; // R
           image.bitmap.data[idx + 1] = (color.rect >> 16) & 0xff; // G
@@ -192,9 +246,11 @@ const createSvgOverlay = async (
 
 export const compositeElementInfoImg = async (options: {
   inputImgBase64: string;
-  elementsPositionInfo: Array<BaseElement>;
+  elementsPositionInfo: Array<ElementForOverlay>;
   size?: { width: number; height: number };
   annotationPadding?: number;
+  borderThickness?: number;
+  prompt?: string;
 }) => {
   assert(options.inputImgBase64, 'inputImgBase64 is required');
   let width = 0;
@@ -227,7 +283,7 @@ export const compositeElementInfoImg = async (options: {
     throw Error('Image processing failed because width or height is undefined');
   }
 
-  const { elementsPositionInfo } = options;
+  const { elementsPositionInfo, prompt } = options;
 
   const result = await Promise.resolve(jimpImage)
     .then(async (image: Jimp) => {
@@ -237,6 +293,8 @@ export const compositeElementInfoImg = async (options: {
         width,
         height,
         options.annotationPadding,
+        options.borderThickness,
+        prompt,
       );
       const svgImage = await Jimp.read(svgOverlay);
       const compositeImage = await image.composite(svgImage, 0, 0, {

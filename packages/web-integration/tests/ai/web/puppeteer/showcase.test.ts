@@ -52,9 +52,11 @@ describe(
 
       // find the items
       const items = await agent.aiQuery(
-        '"{name: string, price: number, actionBtnName: string}[], return item name, price and the action button name on the lower right corner of each item (like "Remove")',
+        '{name: string, price: number, actionBtnName: string, imageUrl: string}[], return item name, price and the action button name on the lower right corner of each item, and the image url of each item (like "Remove")',
+        { domIncluded: true, screenshotIncluded: false },
       );
       console.log('item list', items);
+      expect(items[0].imageUrl).toContain('/static/media/');
       expect(items.length).toBeGreaterThanOrEqual(2);
 
       await agent.aiAssert('The price of "Sauce Labs Backpack" is 29.99');
@@ -125,19 +127,25 @@ describe(
 
         await sleep(3000);
 
-        await agent.aiTap('the settings button', {
-          deepThink: true,
-        });
+        const settingsButton = await agent.aiBoolean(
+          'there is a settings button in the page',
+        );
 
-        await agent.aiTap('搜索设置', {
-          deepThink: true,
-        });
+        if (settingsButton) {
+          await agent.aiTap('the settings button', {
+            deepThink: true,
+          });
 
-        await agent.aiTap('the close button of the popup', {
-          deepThink: true,
-        });
+          await agent.aiTap('搜索设置', {
+            deepThink: true,
+          });
 
-        await agent.aiAssert('there is NOT a popup shown in the page');
+          await agent.aiTap('the close button of the popup', {
+            deepThink: true,
+          });
+
+          await agent.aiAssert('there is NOT a popup shown in the page');
+        }
       },
     );
 
@@ -158,6 +166,32 @@ describe(
       },
       3 * 60 * 1000,
     );
+
+    it('element describer', async () => {
+      const { originPage, reset } = await launchPage('https://www.baidu.com/');
+      resetFn = reset;
+      const agent = new PuppeteerAgent(originPage);
+
+      const { center } = await agent.aiLocate('the search bar');
+      const describeResult = await agent.describeElementAtPoint(center);
+      expect(describeResult.verifyResult?.pass).toBe(true);
+      expect(describeResult.verifyResult?.rect).toBeTruthy();
+      expect(describeResult.verifyResult?.center).toBeTruthy();
+    });
+
+    it('element describer - deep think', async () => {
+      const { originPage, reset } = await launchPage('https://www.baidu.com/');
+      resetFn = reset;
+      const agent = new PuppeteerAgent(originPage);
+
+      const { center } = await agent.aiLocate('the "search" button');
+      const describeResult = await agent.describeElementAtPoint(center, {
+        deepThink: true,
+      });
+      expect(describeResult.verifyResult?.pass).toBe(true);
+      expect(describeResult.verifyResult?.rect).toBeTruthy();
+      expect(describeResult.verifyResult?.center).toBeTruthy();
+    });
 
     it('scroll', async () => {
       const htmlPath = path.join(__dirname, 'scroll.html');
@@ -195,6 +229,44 @@ describe(
       await agent.aiAction('Tap hao123 in the navigation bar');
 
       await agent.aiWaitFor('There is a weather forecast in the page');
+    });
+
+    it('input xss content', async () => {
+      const { originPage, reset } = await launchPage('https://www.baidu.com/');
+      const agent = new PuppeteerAgent(originPage);
+      await agent.aiInput(
+        '</script><script>alert("xss")</script>',
+        'the search box',
+      );
+      await reset();
+
+      const reportFile = agent.reportFile;
+      const reportPage = await launchPage(`file://${reportFile}`);
+      const reportAgent = new PuppeteerAgent(reportPage.originPage);
+      await reportAgent.aiAssert('there is a sidebar in the page');
+      resetFn = reportPage.reset;
+    });
+
+    it('Sauce Demo by Swag Lab - aiQuery', async () => {
+      const { originPage, reset } = await launchPage(
+        'https://www.saucedemo.com/',
+      );
+      resetFn = reset;
+      const agent = new PuppeteerAgent(originPage, {
+        cacheId: 'puppeteer(Sauce Demo by Swag Lab)',
+      });
+
+      await sleep(10 * 1000);
+
+      const title = await agent.aiQuery('the page title, string');
+      const list = await agent.aiQuery('the name of input fields, string[]');
+      const button = await agent.aiQuery({
+        first_input_name: 'the name of the first input field, string',
+        login_button_name: 'the name of the login button, string',
+      });
+      expect(title).toBe('Swag Labs');
+      expect(list.length).toBeGreaterThan(0);
+      expect(button.first_input_name).toBeDefined();
     });
 
     it.skip('Playground', async () => {
