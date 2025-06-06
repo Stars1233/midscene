@@ -4,13 +4,12 @@ import type {
   AIElementLocatorResponse,
   AIElementResponse,
   AISectionLocatorResponse,
-  AISingleElementResponse,
-  AISingleElementResponseByPosition,
   AIUsageInfo,
   BaseElement,
   ElementById,
-  ElementTreeNode,
+  InsightExtractOption,
   Rect,
+  ReferenceImage,
   UIContext,
 } from '@/types';
 import {
@@ -35,7 +34,10 @@ import {
   mergeRects,
 } from './common';
 import { systemPromptToAssert } from './prompt/assertion';
-import { extractDataPrompt, systemPromptToExtract } from './prompt/extraction';
+import {
+  extractDataQueryPrompt,
+  systemPromptToExtract,
+} from './prompt/extraction';
 import {
   findElementPrompt,
   systemPromptToLocateElement,
@@ -57,11 +59,6 @@ export type AIArgs = [
   ChatCompletionUserMessageParam,
 ];
 
-const liteContextConfig = {
-  filterNonTextContent: true,
-  truncateTextLength: 200,
-};
-
 const debugInspect = getDebug('ai:inspect');
 const debugSection = getDebug('ai:section');
 
@@ -70,6 +67,7 @@ export async function AiLocateElement<
 >(options: {
   context: UIContext<ElementType>;
   targetElementDescription: string;
+  referenceImage?: ReferenceImage;
   callAI?: typeof callAiFn<AIElementResponse | [number, number]>;
   searchConfig?: Awaited<ReturnType<typeof AiLocateSection>>;
 }): Promise<{
@@ -115,6 +113,15 @@ export async function AiLocateElement<
       screenshotBase64,
       context.tree,
       context.size,
+    );
+  }
+
+  let referenceImagePayload: string | undefined;
+  if (options.referenceImage?.rect && options.referenceImage.base64) {
+    referenceImagePayload = await cropByRect(
+      options.referenceImage.base64,
+      options.referenceImage.rect,
+      getAIConfigInBoolean(MIDSCENE_USE_QWEN_VL),
     );
   }
 
@@ -300,48 +307,46 @@ export async function AiExtractElementInfo<
 >(options: {
   dataQuery: string | Record<string, string>;
   context: UIContext<ElementType>;
+  extractOption?: InsightExtractOption;
 }) {
-  const { dataQuery, context } = options;
+  const { dataQuery, context, extractOption } = options;
   const systemPrompt = systemPromptToExtract();
 
   const { screenshotBase64 } = context;
-  const { description, elementById } = await describeUserPage(
-    context,
-    liteContextConfig,
+  const { description, elementById } = await describeUserPage(context, {
+    truncateTextLength: 200,
+    filterNonTextContent: false,
+    visibleOnly: false,
+    domIncluded: extractOption?.domIncluded,
+  });
+
+  const extractDataPromptText = await extractDataQueryPrompt(
+    description,
+    dataQuery,
   );
 
-  let dataKeys = '';
-  let dataQueryText = '';
-  if (typeof dataQuery === 'string') {
-    dataKeys = '';
-    dataQueryText = dataQuery;
-  } else {
-    dataKeys = `return in key-value style object, keys are ${Object.keys(dataQuery).join(',')}`;
-    dataQueryText = JSON.stringify(dataQuery, null, 2);
+  const userContent: ChatCompletionUserMessageParam['content'] = [];
+
+  if (extractOption?.screenshotIncluded !== false) {
+    userContent.push({
+      type: 'image_url',
+      image_url: {
+        url: screenshotBase64,
+        detail: 'high',
+      },
+    });
   }
-  const extractDataPromptText = await extractDataPrompt.format({
-    pageDescription: description,
-    dataKeys,
-    dataQuery: dataQueryText,
+
+  userContent.push({
+    type: 'text',
+    text: extractDataPromptText,
   });
 
   const msgs: AIArgs = [
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
-      content: [
-        {
-          type: 'image_url',
-          image_url: {
-            url: screenshotBase64,
-            detail: 'high',
-          },
-        },
-        {
-          type: 'text',
-          text: extractDataPromptText,
-        },
-      ],
+      content: userContent,
     },
   ];
 

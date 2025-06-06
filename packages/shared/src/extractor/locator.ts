@@ -1,5 +1,6 @@
 import type { ElementInfo } from '.';
 import { getNodeFromCacheList } from './util';
+import { getRect, isElementPartiallyInViewport } from './util';
 import { collectElementInfo } from './web-extractor';
 
 const getElementIndex = (element: Element): number => {
@@ -16,18 +17,19 @@ const getElementIndex = (element: Element): number => {
   return index;
 };
 
-// Find the first ancestor with an ID
-const findFirstAncestorWithId = (element: Element): Element | null => {
-  let current = element;
+// Get the index of a text node among its siblings of the same type
+const getTextNodeIndex = (textNode: Node): number => {
+  let index = 1;
+  let current = textNode.previousSibling;
 
-  while (current?.parentElement) {
-    if (current.id) {
-      return current;
+  while (current) {
+    if (current.nodeType === Node.TEXT_NODE) {
+      index++;
     }
-    current = current.parentElement;
+    current = current.previousSibling;
   }
 
-  return null;
+  return index;
 };
 
 const getElementXPath = (element: Node): string => {
@@ -37,7 +39,14 @@ const getElementXPath = (element: Node): string => {
     const parentNode = element.parentNode;
     if (parentNode && parentNode.nodeType === Node.ELEMENT_NODE) {
       const parentXPath = getElementXPath(parentNode);
-      return `${parentXPath}/text()`;
+      const textIndex = getTextNodeIndex(element);
+      const textContent = element.textContent?.trim();
+
+      // If we have text content, include it in the xpath for better matching
+      if (textContent) {
+        return `${parentXPath}/text()[${textIndex}][normalize-space()="${textContent}"]`;
+      }
+      return `${parentXPath}/text()[${textIndex}]`;
     }
     return '';
   }
@@ -55,36 +64,7 @@ const getElementXPath = (element: Node): string => {
     return '/html/body';
   }
 
-  // If this element has an ID, return an XPath with the ID
-  if (el.id) {
-    return `//*[@id="${el.id}"]`;
-  }
-
-  const ancestorWithId = findFirstAncestorWithId(el);
-
-  if (ancestorWithId) {
-    // Start from the ancestor with ID
-    const ancestorPath = `//*[@id="${ancestorWithId.id}"]`;
-
-    // Build the path from the ancestor to this element
-    let current: Element | null = el;
-    const pathParts: string[] = [];
-
-    while (current && current !== ancestorWithId) {
-      const index = getElementIndex(current);
-      const tagName = current.nodeName.toLowerCase();
-      pathParts.unshift(`${tagName}[${index}]`);
-      current = current.parentElement;
-    }
-
-    // Combine the ancestor path with the rest of the path
-    return pathParts.length > 0
-      ? `${ancestorPath}/${pathParts.join('/')}`
-      : ancestorPath;
-  }
-
-  // If no parent node, or we need a full path and haven't returned yet,
-  // start building the full path
+  // If no parent node, return just the tag name
   if (!el.parentNode) {
     return `/${el.nodeName.toLowerCase()}`;
   }
@@ -103,9 +83,9 @@ const getElementXPath = (element: Node): string => {
 function generateXPaths(node: Node | null): string[] {
   if (!node) return [];
 
-  const xPath = getElementXPath(node);
+  const fullXPath = getElementXPath(node);
 
-  return [xPath];
+  return [fullXPath];
 }
 
 export function getXpathsById(id: string): string[] | null {
@@ -144,18 +124,17 @@ export function getElementInfoByXpath(xpath: string): ElementInfo | null {
   }
 
   if (node instanceof HTMLElement) {
-    node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // only when the element is not completely in the viewport, call scrollIntoView
+    const rect = getRect(node, 1, window);
+    const isVisible = isElementPartiallyInViewport(rect, window, document, 1);
+
+    if (!isVisible) {
+      node.scrollIntoView({ behavior: 'instant', block: 'center' });
+    }
   }
 
-  return collectElementInfo(
-    node,
-    window,
-    document,
-    1,
-    {
-      left: 0,
-      top: 0,
-    },
-    false,
-  );
+  return collectElementInfo(node, window, document, 1, {
+    left: 0,
+    top: 0,
+  });
 }
