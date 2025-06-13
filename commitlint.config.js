@@ -7,7 +7,9 @@ function getSubdirectories(dir) {
   if (!fs.existsSync(dir)) return [];
 
   return fs
-    .readdirSync(dir, { withFileTypes: true })
+    .readdirSync(dir, {
+      withFileTypes: true,
+    })
     .filter((dirent) => dirent.isDirectory())
     .map((dirent) => dirent.name);
 }
@@ -24,7 +26,9 @@ const allScopes = [
   'playwright',
   'puppeteer',
   'mcp',
+  'blog',
   'bridge',
+  'recorder',
   // automatically added scopes
   ...appsScopes,
   ...packagesScopes,
@@ -37,11 +41,12 @@ module.exports = {
   extends: ['@commitlint/config-conventional'],
   rules: {
     'scope-enum': [
-      2, // Level: Error
+      0, // Level: Error
       'always', // Apply rule always
       uniqueScopes,
     ],
     // Add rule to disallow empty scopes
     'scope-empty': [2, 'never'],
+    'header-max-length': [2, 'always', 300],
   },
 };

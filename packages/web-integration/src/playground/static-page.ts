@@ -20,14 +20,10 @@ export default class StaticPage implements AbstractPage {
     if (uiContext.tree) {
       this.uiContext = uiContext;
     } else {
-      const contents = uiContext.content || [];
       this.uiContext = Object.assign(uiContext, {
         tree: {
           node: null,
-          children: contents.map((content) => ({
-            node: content,
-            children: [],
-          })),
+          children: [],
         },
       });
     }
@@ -37,12 +33,21 @@ export default class StaticPage implements AbstractPage {
     return ThrowNotImplemented('evaluateJavaScript');
   }
 
+  // @deprecated
   async getElementsInfo() {
     return ThrowNotImplemented('getElementsInfo');
   }
 
   async getElementsNodeTree() {
     return ThrowNotImplemented('getElementsNodeTree');
+  }
+
+  async getXpathsById(id: string) {
+    return ThrowNotImplemented('getXpathsById');
+  }
+
+  async getElementInfoByXpath(xpath: string) {
+    return ThrowNotImplemented('getElementInfoByXpath');
   }
 
   async size() {

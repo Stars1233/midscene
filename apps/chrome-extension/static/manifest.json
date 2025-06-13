@@ -1,13 +1,14 @@
 {
   "name": "Midscene.js",
   "description": "Open-source SDK for automating web pages using natural language through AI.",
-  "version": "0.67",
+  "version": "0.76",
   "manifest_version": 3,
   "permissions": [
     "activeTab",
     "tabs",
     "sidePanel",
-    "debugger"
+    "debugger",
+    "scripting"
   ],
   "incognito": "split",
   "background": {

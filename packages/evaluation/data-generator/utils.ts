@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { NodeType } from '@midscene/shared/constants';
 
 import path from 'node:path';
@@ -14,6 +14,16 @@ import {
 import type { WebPage } from '@midscene/web';
 
 import type { ElementInfo } from '@midscene/shared/extractor';
+
+export function generateTestDataPath(testDataName: string) {
+  assert(testDataName, 'testDataName is required');
+  const midsceneTestDataPath = path.join(
+    __dirname,
+    `../page-data/${testDataName}`,
+  );
+
+  return midsceneTestDataPath;
+}
 
 export async function generateExtractData(
   page: WebPage,
@@ -96,16 +106,6 @@ export async function generateExtractData(
       outputPath: resizeOutputImgPath,
     });
   }
-}
-
-export function generateTestDataPath(testDataName: string) {
-  assert(testDataName, 'testDataName is required');
-  const midsceneTestDataPath = path.join(
-    __dirname,
-    `../page-data/${testDataName}`,
-  );
-
-  return midsceneTestDataPath;
 }
 
 function ensureDirectoryExistence(filePath: string) {

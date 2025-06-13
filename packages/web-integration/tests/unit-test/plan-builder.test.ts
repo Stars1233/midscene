@@ -1,5 +1,5 @@
 import { buildPlans } from '@/common/plan-builder';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 describe('build plans', () => {
   it('tap', async () => {
@@ -8,7 +8,18 @@ describe('build plans', () => {
       {
         prompt: 'OK button',
       },
-      null,
+      undefined,
+    );
+    expect(result).toMatchSnapshot();
+  });
+
+  it('rightClick', async () => {
+    const result = buildPlans(
+      'RightClick',
+      {
+        prompt: 'context menu target',
+      },
+      undefined,
     );
     expect(result).toMatchSnapshot();
   });
@@ -18,9 +29,8 @@ describe('build plans', () => {
       'Hover',
       {
         prompt: 'OK button',
-        searchArea: 'the cookie prompt',
       },
-      null,
+      undefined,
     );
     expect(result).toMatchSnapshot();
   });

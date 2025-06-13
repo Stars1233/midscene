@@ -20,48 +20,11 @@ export function logger(..._msg: any[]): void {
   console.log(..._msg);
 }
 
-// const nodeIndexCounter = 0;
-
-const taskIdKey = '_midscene_retrieve_task_id';
-// const nodeDataIdKey = 'data-midscene-task-';
-// const nodeIndexKey = '_midscene_retrieve_node_index';
-
-function selectorForValue(val: number | string): string {
-  return `[${taskIdKey}='${val}']`;
-}
-
-export function setDataForNode(
-  node: globalThis.HTMLElement | globalThis.Node,
-  nodeHash: string,
-  setToParentNode: boolean, // should be false for default
-  currentWindow: typeof globalThis.window,
-): string {
-  const taskId = taskIdKey;
-  if (!(node instanceof currentWindow.HTMLElement)) {
-    return '';
-  }
-  if (!taskId) {
-    console.error('No task id found');
-    return '';
-  }
-
-  const selector = selectorForValue(nodeHash);
-  if (getDebugMode()) {
-    if (setToParentNode) {
-      if (node.parentNode instanceof currentWindow.HTMLElement) {
-        node.parentNode.setAttribute(taskIdKey, nodeHash.toString());
-      }
-    } else {
-      node.setAttribute(taskIdKey, nodeHash.toString());
-    }
-  }
-  return selector;
-}
-
-function isElementPartiallyInViewport(
+export function isElementPartiallyInViewport(
   rect: ReturnType<typeof getRect>,
   currentWindow: typeof window,
   currentDocument: typeof document,
+  visibleAreaRatio: number = 2 / 3,
 ) {
   const elementHeight = rect.height;
   const elementWidth = rect.width;
@@ -90,7 +53,7 @@ function isElementPartiallyInViewport(
   const visibleArea = overlapRect.width * overlapRect.height;
   const totalArea = elementHeight * elementWidth;
   // return visibleArea > 30 * 30 || visibleArea / totalArea >= 2 / 3;
-  return visibleArea / totalArea >= 2 / 3;
+  return visibleArea / totalArea >= visibleAreaRatio;
 }
 
 export function getPseudoElementContent(
@@ -260,9 +223,15 @@ export function elementRect(
   currentWindow: typeof globalThis.window,
   currentDocument: typeof globalThis.document,
   baseZoom = 1,
-  visibleOnly = true,
 ):
-  | { left: number; top: number; width: number; height: number; zoom: number }
+  | {
+      left: number;
+      top: number;
+      width: number;
+      height: number;
+      zoom: number;
+      isVisible: boolean;
+    }
   | false {
   if (!el) {
     logger(el, 'Element is not in the DOM hierarchy');
@@ -303,29 +272,11 @@ export function elementRect(
     return false;
   }
 
-  const scrollLeft =
-    currentWindow.pageXOffset || currentDocument.documentElement.scrollLeft;
-  const scrollTop =
-    currentWindow.pageYOffset || currentDocument.documentElement.scrollTop;
-  const viewportWidth =
-    currentWindow.innerWidth || currentDocument.documentElement.clientWidth;
-  const viewportHeight =
-    currentWindow.innerHeight || currentDocument.documentElement.clientHeight;
-
-  const isPartiallyInViewport = visibleOnly
-    ? isElementPartiallyInViewport(rect, currentWindow, currentDocument)
-    : true;
-
-  if (!isPartiallyInViewport) {
-    logger(el, 'Element is completely outside the viewport', {
-      rect,
-      viewportHeight,
-      viewportWidth,
-      scrollTop,
-      scrollLeft,
-    });
-    return false;
-  }
+  const isVisible = isElementPartiallyInViewport(
+    rect,
+    currentWindow,
+    currentDocument,
+  );
 
   // check if the element is hidden by an ancestor
   let parent: HTMLElement | Node | null = el;
@@ -383,6 +334,7 @@ export function elementRect(
     width: Math.round(rect.width),
     height: Math.round(rect.height),
     zoom: rect.zoom,
+    isVisible,
   };
 }
 
@@ -470,13 +422,13 @@ export function setNodeToCacheList(node: globalThis.Node, id: string) {
     if (getNodeFromCacheList(id)) {
       return;
     }
-    (window as any).midsceneNodeHashCacheList.push({ node, id });
+    (window as any).midsceneNodeHashCacheList?.push({ node, id });
   }
 }
 
 export function getNodeFromCacheList(id: string) {
   if (typeof window !== 'undefined') {
-    return (window as any).midsceneNodeHashCacheList.find(
+    return (window as any).midsceneNodeHashCacheList?.find(
       (item: { node: Node; id: string }) => item.id === id,
     )?.node;
   }

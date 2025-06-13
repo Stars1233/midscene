@@ -9,6 +9,7 @@ export enum NodeType {
   CONTAINER = 'CONTAINER Node',
   FORM_ITEM = 'FORM_ITEM Node',
   BUTTON = 'BUTTON Node',
+  A = 'Anchor Node',
   IMG = 'IMG Node',
   TEXT = 'TEXT Node',
   POSITION = 'POSITION Node',
@@ -21,3 +22,5 @@ export const DEFAULT_WAIT_FOR_NAVIGATION_TIMEOUT = 5000;
 export const DEFAULT_WAIT_FOR_NETWORK_IDLE_TIMEOUT = 2000;
 export const DEFAULT_WAIT_FOR_NETWORK_IDLE_TIME = 300;
 export const DEFAULT_WAIT_FOR_NETWORK_IDLE_CONCURRENCY = 2;
+
+export { PLAYWRIGHT_EXAMPLE_CODE, YAML_EXAMPLE_CODE } from './example-code';

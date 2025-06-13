@@ -1,6 +1,6 @@
 {
   "name": "@midscene/shared",
-  "version": "0.17.0",
+  "version": "0.19.0",
   "repository": "https://github.com/web-infra-dev/midscene",
   "homepage": "https://midscenejs.com/",
   "types": "./dist/types/index.d.ts",
@@ -53,8 +53,7 @@
     "new": "modern new",
     "upgrade": "modern upgrade",
     "test": "vitest --run",
-    "test:u": "vitest --run -u",
-    "test:ai": "AITEST=true npm run test"
+    "test:u": "vitest --run -u"
   },
   "dependencies": {
     "debug": "4.4.0",
@@ -68,12 +67,13 @@
     "@ui-tars/shared": "1.2.0",
     "dotenv": "16.4.5",
     "rimraf": "~3.0.2",
-    "typescript": "^5.8.2",
+    "typescript": "^5.8.3",
     "vitest": "3.0.5"
   },
   "sideEffects": [],
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
-  }
+  },
+  "license": "MIT"
 }

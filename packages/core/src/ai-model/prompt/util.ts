@@ -1,7 +1,6 @@
 import { imageInfoOfBase64 } from '@/image/index';
 import type { BaseElement, ElementTreeNode, Size, UIContext } from '@/types';
 import { NodeType } from '@midscene/shared/constants';
-import { vlLocateMode } from '@midscene/shared/env';
 import {
   descriptionOfTree,
   generateElementByPosition,
@@ -133,6 +132,8 @@ export async function describeUserPage<
   opt?: {
     truncateTextLength?: number;
     filterNonTextContent?: boolean;
+    domIncluded?: boolean | 'visible-only';
+    visibleOnly?: boolean;
   },
 ) {
   const { screenshotBase64 } = context;
@@ -150,6 +151,13 @@ export async function describeUserPage<
   // dfs tree, save the id and element info
   const idElementMap: Record<string, ElementType> = {};
   const flatElements: ElementType[] = treeToList(treeRoot);
+
+  if (opt?.domIncluded === true && flatElements.length >= 5000) {
+    console.warn(
+      'The number of elements is too large, it may cause the prompt to be too long, please use domIncluded: "visible-only" to reduce the number of elements',
+    );
+  }
+
   flatElements.forEach((element) => {
     idElementMap[element.id] = element;
     if (typeof element.indexId !== 'undefined') {
@@ -157,17 +165,20 @@ export async function describeUserPage<
     }
   });
 
-  const contentTree = await descriptionOfTree(
-    treeRoot,
-    opt?.truncateTextLength,
-    opt?.filterNonTextContent,
-  );
+  let pageDescription = '';
+  const visibleOnly = opt?.visibleOnly ?? opt?.domIncluded === 'visible-only';
+  if (opt?.domIncluded) {
+    const contentTree = await descriptionOfTree(
+      treeRoot,
+      opt?.truncateTextLength,
+      opt?.filterNonTextContent,
+      visibleOnly,
+    );
 
-  // if match by position, don't need to provide the page description
-  const sizeDescription = describeSize({ width, height });
-  const pageDescription = vlLocateMode()
-    ? ''
-    : `The size of the page: ${sizeDescription} \n Some of the elements are marked with a rectangle in the screenshot, some are not. \n The page elements tree:\n${contentTree}`;
+    // if match by position, don't need to provide the page description
+    const sizeDescription = describeSize({ width, height });
+    pageDescription = `The size of the page: ${sizeDescription} \n The page elements tree:\n${contentTree}`;
+  }
 
   return {
     description: pageDescription,

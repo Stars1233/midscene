@@ -1,7 +1,7 @@
 /* eslint-disable max-lines */
 'use client';
 import './detail-side.less';
-import { timeStr } from '@/utils';
+import { timeStr } from '@midscene/visualizer';
 import { paramStr, typeStr } from '@midscene/web/ui-utils';
 
 import { RadiusSettingOutlined } from '@ant-design/icons';
@@ -161,10 +161,7 @@ const DetailSide = (): JSX.Element => {
           <span key={index}>{elementEl(item)}</span>
         ));
       } else {
-        content =
-          typeof value === 'string'
-            ? value
-            : JSON.stringify(value, undefined, 2);
+        content = <pre>{JSON.stringify(value, undefined, 2)}</pre>;
       }
 
       return (
@@ -174,10 +171,6 @@ const DetailSide = (): JSX.Element => {
       );
     });
   };
-
-  const usageInfo = (task as ExecutionTask)?.usage
-    ? JSON.stringify((task as ExecutionTask)?.usage, undefined, 2)
-    : '';
 
   const metaKVElement = MetaKV({
     data: [
@@ -197,35 +190,46 @@ const DetailSide = (): JSX.Element => {
         key: 'total time',
         content: timeCostStrElement(task?.timing?.cost),
       },
-      ...(task?.timing?.aiCost
+      ...(task?.usage?.time_cost
         ? [
             {
               key: 'AI service time',
-              content: timeCostStrElement(task?.timing?.aiCost),
+              content: <pre>{timeCostStrElement(task?.usage?.time_cost)}</pre>,
             },
           ]
         : []),
       {
         key: 'cache',
-        content: task?.cache ? JSON.stringify(task?.cache) : 'false',
+        content: task?.cache ? (
+          <pre>{JSON.stringify(task?.cache, undefined, 2)}</pre>
+        ) : (
+          'false'
+        ),
       },
       ...(task?.locate
         ? [
             {
               key: 'locate',
-              content: JSON.stringify(task.locate),
+              content: <pre>{JSON.stringify(task.locate, undefined, 2)}</pre>,
             },
           ]
         : []),
-      ...(usageInfo ? [{ key: 'usage', content: usageInfo }] : []),
+      ...(task?.usage
+        ? [
+            {
+              key: 'usage',
+              content: <pre>{JSON.stringify(task.usage, undefined, 2)}</pre>,
+            },
+          ]
+        : []),
     ],
   });
 
-  let taskParam: JSX.Element | null = null;
+  let taskInput: JSX.Element | null = null;
   if (task?.type === 'Planning') {
     const planningTask = task as ExecutionTaskPlanning;
     if (planningTask.param?.userInstruction) {
-      taskParam = MetaKV({
+      taskInput = MetaKV({
         data: [
           { key: 'type', content: (task && typeStr(task)) || '' },
           {
@@ -239,7 +243,7 @@ const DetailSide = (): JSX.Element => {
         ],
       });
     } else {
-      taskParam = MetaKV({
+      taskInput = MetaKV({
         data: [
           { key: 'type', content: (task && typeStr(task)) || '' },
           {
@@ -250,7 +254,7 @@ const DetailSide = (): JSX.Element => {
       });
     }
   } else if (task?.type === 'Insight') {
-    taskParam = MetaKV({
+    taskInput = MetaKV({
       data: [
         { key: 'type', content: (task && typeStr(task)) || '' },
         ...(paramStr(task)
@@ -280,7 +284,7 @@ const DetailSide = (): JSX.Element => {
       ],
     });
   } else if (task?.type === 'Action') {
-    taskParam = MetaKV({
+    taskInput = MetaKV({
       data: [
         { key: 'type', content: (task && typeStr(task)) || '' },
         {
@@ -289,6 +293,10 @@ const DetailSide = (): JSX.Element => {
         },
       ],
     });
+  } else if (task?.type === 'Log') {
+    taskInput = task.param?.content ? (
+      <pre className="log-content">{task.param.content}</pre>
+    ) : null;
   }
 
   let outputDataContent = null;
@@ -379,7 +387,7 @@ const DetailSide = (): JSX.Element => {
 
           const locateStr =
             item.type === 'Locate' && item.locate
-              ? JSON.stringify(item.locate)
+              ? JSON.stringify(item.locate, undefined, 2)
               : null;
 
           return {
@@ -390,8 +398,12 @@ const DetailSide = (): JSX.Element => {
                   <b>{typeStr(item as any)}</b>
                 </p>
                 <p>{item.thought}</p>
-                <p>{paramStr}</p>
-                <p>{locateStr}</p>
+                <p>
+                  <pre>{paramStr}</pre>
+                </p>
+                <p>
+                  <pre>{locateStr}</pre>
+                </p>
               </>
             ),
           };
@@ -467,9 +479,9 @@ const DetailSide = (): JSX.Element => {
       {/* Meta */}
       <PanelTitle title="Task Meta" />
       {metaKVElement}
-      {/* Param  */}
-      <PanelTitle title="Param" />
-      {taskParam}
+      {/* Input: Param/Content  */}
+      <PanelTitle title={task?.type === 'Log' ? 'Content' : 'Param'} />
+      {taskInput}
       {/* Response */}
       <PanelTitle title={task?.subType === 'Locate' ? 'Element' : 'Output'} />
       <div className="item-list item-list-space-up">{outputDataContent}</div>

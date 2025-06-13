@@ -1,15 +1,26 @@
-import { callAiFn } from '@/ai-model/common';
-import { AiExtractElementInfo, AiLocateElement } from '@/ai-model/index';
+import {
+  AIActionType,
+  type AIArgs,
+  callAiFn,
+  expandSearchArea,
+} from '@/ai-model/common';
+import {
+  AiExtractElementInfo,
+  AiLocateElement,
+  callToGetJSONObject,
+} from '@/ai-model/index';
 import { AiAssert, AiLocateSection } from '@/ai-model/inspect';
+import { elementDescriberInstruction } from '@/ai-model/prompt/describe';
 import type {
+  AIDescribeElementResponse,
   AIElementResponse,
-  AISingleElementResponse,
   AIUsageInfo,
   BaseElement,
   DetailedLocateParam,
   DumpSubscriber,
   InsightAction,
   InsightAssertionResponse,
+  InsightExtractOption,
   InsightExtractParam,
   InsightOptions,
   InsightTaskInfo,
@@ -20,9 +31,11 @@ import type {
 } from '@/types';
 import {
   MIDSCENE_FORCE_DEEP_THINK,
+  MIDSCENE_USE_QWEN_VL,
   getAIConfigInBoolean,
   vlLocateMode,
 } from '@midscene/shared/env';
+import { compositeElementInfoImg, cropByRect } from '@midscene/shared/img';
 import { getDebug } from '@midscene/shared/logger';
 import { assert } from '@midscene/shared/utils';
 import { emitInsightDump } from './utils';
@@ -216,13 +229,20 @@ export default class Insight<
     };
   }
 
-  async extract<T = any>(input: string): Promise<T>;
+  async extract<T = any>(input: string, opt?: InsightExtractOption): Promise<T>;
   async extract<T extends Record<string, string>>(
     input: T,
+    opt?: InsightExtractOption,
   ): Promise<Record<keyof T, any>>;
-  async extract<T extends object>(input: Record<keyof T, string>): Promise<T>;
+  async extract<T extends object>(
+    input: Record<keyof T, string>,
+    opt?: InsightExtractOption,
+  ): Promise<T>;
 
-  async extract<T>(dataDemand: InsightExtractParam): Promise<any> {
+  async extract<T>(
+    dataDemand: InsightExtractParam,
+    opt?: InsightExtractOption,
+  ): Promise<any> {
     assert(
       typeof dataDemand === 'object' || typeof dataDemand === 'string',
       `dataDemand should be object or string, but get ${typeof dataDemand}`,
@@ -236,6 +256,7 @@ export default class Insight<
     const { parseResult, usage } = await AiExtractElementInfo<T>({
       context,
       dataQuery: dataDemand,
+      extractOption: opt,
     });
 
     const timeCost = Date.now() - startTime;
@@ -326,5 +347,76 @@ export default class Insight<
       thought,
       usage: assertResult.usage,
     };
+  }
+  async describe(
+    target: Rect | [number, number],
+    opt?: {
+      deepThink?: boolean;
+    },
+  ): Promise<Pick<AIDescribeElementResponse, 'description'>> {
+    assert(target, 'target is required for insight.describe');
+    const context = await this.contextRetrieverFn('describe');
+    const { screenshotBase64, size } = context;
+    assert(screenshotBase64, 'screenshot is required for insight.describe');
+
+    const systemPrompt = elementDescriberInstruction();
+
+    // Convert [x,y] center point to Rect if needed
+    const defaultRectSize = 30;
+    const targetRect: Rect = Array.isArray(target)
+      ? {
+          left: Math.floor(target[0] - defaultRectSize / 2),
+          top: Math.floor(target[1] - defaultRectSize / 2),
+          width: defaultRectSize,
+          height: defaultRectSize,
+        }
+      : target;
+
+    let imagePayload = await compositeElementInfoImg({
+      inputImgBase64: screenshotBase64,
+      size,
+      elementsPositionInfo: [
+        {
+          rect: targetRect,
+        },
+      ],
+      borderThickness: 3,
+    });
+
+    if (opt?.deepThink) {
+      const searchArea = expandSearchArea(targetRect, context.size);
+      debug('describe: set searchArea', searchArea);
+      imagePayload = await cropByRect(
+        imagePayload,
+        searchArea,
+        getAIConfigInBoolean(MIDSCENE_USE_QWEN_VL),
+      );
+    }
+
+    const msgs: AIArgs = [
+      { role: 'system', content: systemPrompt },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image_url',
+            image_url: {
+              url: imagePayload,
+              detail: 'high',
+            },
+          },
+        ],
+      },
+    ];
+
+    const callAIFn =
+      this.aiVendorFn || callToGetJSONObject<AIDescribeElementResponse>;
+
+    const res = await callAIFn(msgs, AIActionType.DESCRIBE_ELEMENT);
+
+    const { content } = res;
+    assert(!content.error, `describe failed: ${content.error}`);
+    assert(content.description, 'failed to describe the element');
+    return content;
   }
 }

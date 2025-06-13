@@ -28,6 +28,7 @@ export { PromptInput } from './component/playground/PromptInput';
 export { Player } from './component/player';
 export { Blackboard } from './component/blackboard';
 export { GithubStar } from './component/github-star';
+export { Describer } from './component/describer';
 
 // Export playground utilities
 export {
@@ -41,3 +42,7 @@ export {
   getPlaceholderForType,
   blankResult,
 } from './component/playground/playground-utils';
+
+export { timeStr, filterBase64Value } from './utils';
+
+export { default as ShinyText } from './component/shiny-text';

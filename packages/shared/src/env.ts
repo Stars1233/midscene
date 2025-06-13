@@ -20,6 +20,8 @@ export const OPENAI_BASE_URL = 'OPENAI_BASE_URL';
 export const OPENAI_MAX_TOKENS = 'OPENAI_MAX_TOKENS';
 
 export const MIDSCENE_ADB_PATH = 'MIDSCENE_ADB_PATH';
+export const MIDSCENE_ADB_REMOTE_HOST = 'MIDSCENE_ADB_REMOTE_HOST';
+export const MIDSCENE_ADB_REMOTE_PORT = 'MIDSCENE_ADB_REMOTE_PORT';
 
 export const MIDSCENE_CACHE = 'MIDSCENE_CACHE';
 export const MIDSCENE_USE_VLM_UI_TARS = 'MIDSCENE_USE_VLM_UI_TARS';
@@ -30,6 +32,8 @@ export const MIDSCENE_USE_VL_MODEL = 'MIDSCENE_USE_VL_MODEL';
 export const MATCH_BY_POSITION = 'MATCH_BY_POSITION';
 export const MIDSCENE_API_TYPE = 'MIDSCENE-API-TYPE';
 export const MIDSCENE_REPORT_TAG_NAME = 'MIDSCENE_REPORT_TAG_NAME';
+
+export const MIDSCENE_PREFERRED_LANGUAGE = 'MIDSCENE_PREFERRED_LANGUAGE';
 
 export const MIDSCENE_USE_AZURE_OPENAI = 'MIDSCENE_USE_AZURE_OPENAI';
 export const MIDSCENE_AZURE_OPENAI_SCOPE = 'MIDSCENE_AZURE_OPENAI_SCOPE';
@@ -70,6 +74,10 @@ export const allConfigFromEnv = () => {
     [OPENAI_MAX_TOKENS]: process.env[OPENAI_MAX_TOKENS] || undefined,
     [OPENAI_USE_AZURE]: process.env[OPENAI_USE_AZURE] || undefined,
     [MIDSCENE_ADB_PATH]: process.env[MIDSCENE_ADB_PATH] || undefined,
+    [MIDSCENE_ADB_REMOTE_HOST]:
+      process.env[MIDSCENE_ADB_REMOTE_HOST] || undefined,
+    [MIDSCENE_ADB_REMOTE_PORT]:
+      process.env[MIDSCENE_ADB_REMOTE_PORT] || undefined,
     [MIDSCENE_CACHE]: process.env[MIDSCENE_CACHE] || undefined,
     [MATCH_BY_POSITION]: process.env[MATCH_BY_POSITION] || undefined,
     [MIDSCENE_REPORT_TAG_NAME]:
@@ -103,6 +111,8 @@ export const allConfigFromEnv = () => {
     [MIDSCENE_MCP_USE_PUPPETEER_MODE]:
       process.env[MIDSCENE_MCP_USE_PUPPETEER_MODE] || undefined,
     [MIDSCENE_RUN_DIR]: process.env[MIDSCENE_RUN_DIR] || undefined,
+    [MIDSCENE_PREFERRED_LANGUAGE]:
+      process.env[MIDSCENE_PREFERRED_LANGUAGE] || undefined,
   };
 };
 
@@ -243,4 +253,14 @@ export const overrideAIConfig = (
   globalConfig = extendMode
     ? { ...currentConfig, ...newConfig }
     : { ...newConfig };
+};
+
+export const getPreferredLanguage = () => {
+  if (getAIConfig(MIDSCENE_PREFERRED_LANGUAGE)) {
+    return getAIConfig(MIDSCENE_PREFERRED_LANGUAGE);
+  }
+
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const isChina = timeZone === 'Asia/Shanghai';
+  return isChina ? 'Chinese' : 'English';
 };

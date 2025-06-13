@@ -252,14 +252,15 @@ export async function call(
   const model = getModelName();
   let content: string | undefined;
   let usage: OpenAI.CompletionUsage | undefined;
+  let timeCost: number | undefined;
   const commonConfig = {
-    temperature: getAIConfigInBoolean(MIDSCENE_USE_VLM_UI_TARS) ? 0.0 : 0.1,
+    temperature: vlLocateMode() === 'vlm-ui-tars' ? 0.0 : 0.1,
     stream: false,
     max_tokens:
       typeof maxTokens === 'number'
         ? maxTokens
         : Number.parseInt(maxTokens || '2048', 10),
-    ...(getAIConfigInBoolean(MIDSCENE_USE_QWEN_VL) // qwen specific config
+    ...(vlLocateMode() === 'qwen-vl' // qwen specific config
       ? {
           vl_high_resolution_images: true,
         }
@@ -269,12 +270,14 @@ export async function call(
     debugCall(`sending request to ${model}`);
     let result: Awaited<ReturnType<typeof completion.create>>;
     try {
+      const startTime = Date.now();
       result = await completion.create({
         model,
         messages,
         response_format: responseFormat,
         ...commonConfig,
       } as any);
+      timeCost = Date.now() - startTime;
     } catch (e: any) {
       const newError = new Error(
         `failed to call AI model service: ${e.message}. Trouble shooting: https://midscenejs.com/model-provider.html`,
@@ -320,6 +323,7 @@ export async function call(
       return content;
     };
 
+    const startTime = Date.now();
     const result = await completion.create({
       model,
       system: 'You are a versatile professional in software UI automation',
@@ -332,12 +336,21 @@ export async function call(
       response_format: responseFormat,
       ...commonConfig,
     } as any);
+    timeCost = Date.now() - startTime;
     content = (result as any).content[0].text as string;
     assert(content, 'empty content');
     usage = result.usage;
   }
 
-  return { content: content || '', usage };
+  return {
+    content: content || '',
+    usage: {
+      prompt_tokens: usage?.prompt_tokens ?? 0,
+      completion_tokens: usage?.completion_tokens ?? 0,
+      total_tokens: usage?.total_tokens ?? 0,
+      time_cost: timeCost ?? 0,
+    },
+  };
 }
 
 export async function callToGetJSONObject<T>(
@@ -359,13 +372,12 @@ export async function callToGetJSONObject<T>(
       case AIActionType.INSPECT_ELEMENT:
         responseFormat = locatorSchema;
         break;
-      case AIActionType.EXTRACT_DATA:
-        //TODO: Currently the restriction type can only be a json subset of the constraint, and the way the extract api is used needs to be adjusted to limit the user's data to this as well
-        // targetResponseFormat = extractDataSchema;
-        responseFormat = { type: AIResponseFormat.JSON };
-        break;
       case AIActionType.PLAN:
         responseFormat = planSchema;
+        break;
+      case AIActionType.EXTRACT_DATA:
+      case AIActionType.DESCRIBE_ELEMENT:
+        responseFormat = { type: AIResponseFormat.JSON };
         break;
     }
   }

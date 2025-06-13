@@ -39,6 +39,7 @@ export enum AIActionType {
   INSPECT_ELEMENT = 1,
   EXTRACT_DATA = 2,
   PLAN = 3,
+  DESCRIBE_ELEMENT = 4,
 }
 
 export async function callAiFn<T>(
@@ -322,7 +323,7 @@ export async function markupImageForLLM(
 
   const imagePayload = await compositeElementInfoImg({
     inputImgBase64: screenshotBase64,
-    elementsPositionInfo: elementsPositionInfoWithoutText as any,
+    elementsPositionInfo: elementsPositionInfoWithoutText,
     size,
   });
   return imagePayload;

@@ -1,14 +1,17 @@
 'use client';
 import './detail-panel.less';
 import { useExecutionDump } from '@/components/store';
-import { filterBase64Value, timeStr } from '@/utils';
 import {
   CameraOutlined,
   FileTextOutlined,
   ScheduleOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
-import type { ExecutionTaskPlanning } from '@midscene/core';
+import type {
+  ExecutionTaskInsightLocate,
+  ExecutionTaskPlanning,
+} from '@midscene/core';
+import { filterBase64Value, timeStr } from '@midscene/visualizer';
 import { Blackboard, Player } from '@midscene/visualizer';
 import { ConfigProvider, Segmented } from 'antd';
 import { useEffect, useState } from 'react';
@@ -32,7 +35,7 @@ const VIEW_TYPE_JSON = 'json';
 
 const DetailPanel = (): JSX.Element => {
   const insightDump = useExecutionDump((store) => store.insightDump);
-  const dumpId = useExecutionDump((store) => store._insightDumpLoadId);
+  const _contextLoadId = useExecutionDump((store) => store._contextLoadId);
   const activeExecution = useExecutionDump((store) => store.activeExecution);
   const activeExecutionId = useExecutionDump(
     (store) => store._executionDumpLoadId,
@@ -92,7 +95,8 @@ const DetailPanel = (): JSX.Element => {
       if (insightDump?.matchedElement) {
         highlightElements = insightDump?.matchedElement;
       } else {
-        highlightElements = activeTask.output.element // hit cache
+        highlightElements = (activeTask as ExecutionTaskInsightLocate).output
+          ?.element // hit cache
           ? [activeTask.output.element]
           : [];
       }
@@ -101,7 +105,7 @@ const DetailPanel = (): JSX.Element => {
           uiContext={activeTask.pageContext}
           highlightElements={highlightElements}
           highlightRect={insightDump?.taskInfo?.searchArea}
-          key={`${dumpId}`}
+          key={`${_contextLoadId}`}
         />
       );
     } else {

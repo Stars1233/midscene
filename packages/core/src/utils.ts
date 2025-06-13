@@ -6,7 +6,6 @@ import { dirname } from 'node:path';
 import {
   defaultRunDirName,
   getMidsceneRunSubDir,
-  logDir,
 } from '@midscene/shared/common';
 import {
   MIDSCENE_DEBUG_MODE,
@@ -15,17 +14,17 @@ import {
   getAIConfigInJson,
 } from '@midscene/shared/env';
 import { getRunningPkgInfo } from '@midscene/shared/fs';
-import { assert, getGlobalScope } from '@midscene/shared/utils';
-import { ifInBrowser, uuid } from '@midscene/shared/utils';
+import { assert, logMsg } from '@midscene/shared/utils';
+import { escapeHtml, ifInBrowser, uuid } from '@midscene/shared/utils';
+import xss from 'xss';
 import type { Rect, ReportDumpWithAttributes } from './types';
 
 let logEnvReady = false;
 
+const xssOptions = {
+  escapeHtml,
+};
 export const groupedActionDumpFileExt = 'web-dump.json';
-
-export function getLogDir() {
-  return logDir;
-}
 
 const reportTpl = 'REPLACE_ME_WITH_REPORT_HTML';
 
@@ -56,7 +55,9 @@ export function reportHTMLContent(
 
   // verify the template contains the placeholder
   if (!tpl.includes(dumpPlaceholder)) {
-    console.warn('Template does not contain {{dump}} placeholder');
+    console.warn(
+      'Failed to get the Midscene report template due to the lack of the {{dump}} placeholder. If you are building Midscene.js by yourself, please refer to the contribution guide for more information: https://github.com/web-infra-dev/midscene/blob/main/CONTRIBUTING.md#FAQ',
+    );
     return '';
   }
 
@@ -104,7 +105,7 @@ export function reportHTMLContent(
     const dumpContent =
       // biome-ignore lint/style/useTemplate: <explanation> do not use template string here, will cause bundle error
       '<script type="midscene_web_dump" type="application/json">\n' +
-      dumpData +
+      xss(dumpData, xssOptions) +
       '\n</script>';
     appendOrWrite(dumpContent);
   }
@@ -122,7 +123,7 @@ export function reportHTMLContent(
         '<script type="midscene_web_dump" type="application/json" ' +
         attributesArr.join(' ') +
         '>\n' +
-        dumpString +
+        xss(dumpString, xssOptions) +
         '\n</script>';
       appendOrWrite(dumpContent);
     }
@@ -162,12 +163,26 @@ export function writeDumpReport(
   reportHTMLContent(dumpData, reportPath);
 
   if (process.env.MIDSCENE_DEBUG_LOG_JSON) {
+    const jsonPath = `${reportPath}.json`;
+    let data = dumpData as ReportDumpWithAttributes[];
+
+    if (typeof dumpData === 'string') {
+      data = JSON.parse(dumpData) as ReportDumpWithAttributes[];
+    }
+
     writeFileSync(
-      `${reportPath}.json`,
-      typeof dumpData === 'string'
-        ? dumpData
-        : JSON.stringify(dumpData, null, 2),
+      jsonPath,
+      JSON.stringify(
+        data.map((item) => ({
+          dumpString: JSON.parse(item.dumpString),
+          attributes: item.attributes,
+        })),
+        null,
+        2,
+      ),
     );
+
+    logMsg(`Midscene - dump file written: ${jsonPath}`);
   }
 
   return reportPath;
